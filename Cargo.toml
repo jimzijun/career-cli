@@ -4,3 +4,9 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+ratatui = "0.26"       # The UI library
+crossterm = "0.27"     # Terminal manipulation backend
+serde = { version = "1.0", features = ["derive"] } # Serialization
+serde_json = "1.0"     # Save data to JSON
+chrono = { version = "0.4", features = ["serde"] } # Time handling
+anyhow = "1.0"         # Easy error handling
