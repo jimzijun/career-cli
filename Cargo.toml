@@ -10,3 +10,4 @@ serde = { version = "1.0", features = ["derive"] } # Serialization
 serde_json = "1.0"     # Save data to JSON
 chrono = { version = "0.4", features = ["serde"] } # Time handling
 anyhow = "1.0"         # Easy error handling
+directories = "6.0.0"
