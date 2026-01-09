@@ -15,7 +15,7 @@ use ratatui::{
     Terminal,
 };
 use ratatui::widgets::Clear; // Add this import at top of file
-use models::Status; // Import Status to match against it
+ // Import Status to match against it
 use models::Job;
 use storage::{load_jobs, save_jobs};
 use ratatui::widgets::{List, ListItem, ListState}; // Updated imports
