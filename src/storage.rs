@@ -1,22 +1,22 @@
 use crate::models::Job;
 use anyhow::{Context, Result};
-use directories::ProjectDirs;
+use directories::UserDirs;
 use std::fs;
 use std::path::PathBuf;
 
 /// Helper to determine where to store the file safely
-/// Mac: ~/Library/Application Support/career-cli/jobs.json
-/// Linux: ~/.local/share/career-cli/jobs.json
+/// Mac/Linux: ~/Documents/career-cli/jobs.json
 fn get_db_path() -> Result<PathBuf> {
-    // "com", "user", "career-cli" follow standard naming conventions
-    let proj_dirs = ProjectDirs::from("com", "user", "career-cli")
+    let user_dirs = UserDirs::new()
         .context("Could not determine home directory")?;
-
-    let data_dir = proj_dirs.data_local_dir();
+    let documents_dir = user_dirs
+        .document_dir()
+        .context("Could not determine Documents directory")?;
+    let data_dir = documents_dir.join("career-cli");
 
     // Create the directory if it doesn't exist yet
     if !data_dir.exists() {
-        fs::create_dir_all(data_dir)
+        fs::create_dir_all(&data_dir)
             .context("Failed to create data directory")?;
     }
 
