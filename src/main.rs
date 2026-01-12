@@ -31,6 +31,12 @@ enum InputMode {
 enum InputField {
     Company,
     Role,
+    Link,
+}
+
+enum EditTarget {
+    New,
+    Existing(usize),
 }
 
 struct App {
@@ -42,6 +48,8 @@ struct App {
     input_field: InputField,
     input_buffer: String,      // What user is currently typing
     temp_company: String,      // Store company while typing role
+    temp_role: String,         // Store role while typing link
+    edit_target: EditTarget,
 }
 
 impl App {
@@ -58,6 +66,8 @@ impl App {
             input_field: InputField::Company,
             input_buffer: String::new(),
             temp_company: String::new(),
+            temp_role: String::new(),
+            edit_target: EditTarget::New,
         }
     }
 
@@ -98,20 +108,57 @@ impl App {
                 self.input_field = InputField::Role;
             }
             InputField::Role => {
-                // Create the job
-                let new_id = self.jobs.len() + 1;
-                let new_job = Job::new(
-                    new_id, 
-                    self.temp_company.clone(), 
-                    self.input_buffer.clone()
-                );
-                self.jobs.push(new_job);
-                
-                // Reset state
+                self.temp_role = self.input_buffer.clone();
                 self.input_buffer.clear();
-                self.temp_company.clear();
-                self.input_mode = InputMode::Normal;
-                self.input_field = InputField::Company; // Reset for next time
+                self.input_field = InputField::Link;
+            }
+            InputField::Link => {
+                let post_link = self.input_buffer.trim().to_string();
+                match self.edit_target {
+                    EditTarget::New => {
+                        let new_id = self.jobs.len() + 1;
+                        let new_job = Job::new(
+                            new_id,
+                            self.temp_company.clone(),
+                            self.temp_role.clone(),
+                            post_link,
+                        );
+                        self.jobs.push(new_job);
+                    }
+                    EditTarget::Existing(index) => {
+                        if let Some(job) = self.jobs.get_mut(index) {
+                            job.post_link = post_link;
+                        }
+                    }
+                }
+                self.reset_input();
+            }
+        }
+    }
+
+    fn reset_input(&mut self) {
+        self.input_buffer.clear();
+        self.temp_company.clear();
+        self.temp_role.clear();
+        self.edit_target = EditTarget::New;
+        self.input_mode = InputMode::Normal;
+        self.input_field = InputField::Company;
+    }
+
+    fn start_add(&mut self) {
+        self.input_mode = InputMode::Editing;
+        self.input_field = InputField::Company;
+        self.edit_target = EditTarget::New;
+        self.input_buffer.clear();
+    }
+
+    fn start_edit_link(&mut self) {
+        if let Some(i) = self.state.selected() {
+            if let Some(job) = self.jobs.get(i) {
+                self.input_mode = InputMode::Editing;
+                self.input_field = InputField::Link;
+                self.edit_target = EditTarget::Existing(i);
+                self.input_buffer = job.post_link.clone();
             }
         }
     }
@@ -120,6 +167,16 @@ impl App {
         if let Some(i) = self.state.selected() {
             if let Some(job) = self.jobs.get_mut(i) {
                 job.cycle_status();
+            }
+        }
+    }
+
+    fn open_current_link(&self) {
+        if let Some(i) = self.state.selected() {
+            if let Some(job) = self.jobs.get(i) {
+                if !job.post_link.trim().is_empty() {
+                    let _ = open::that(&job.post_link);
+                }
             }
         }
     }
@@ -186,13 +243,12 @@ fn run_app<B: ratatui::backend::Backend>(
                         KeyCode::Char('q') => app.should_quit = true,
                         KeyCode::Down => app.next(),
                         KeyCode::Up => app.previous(),
-                        KeyCode::Char('a') => {
-                            app.input_mode = InputMode::Editing;
-                            app.input_field = InputField::Company;
-                        }
+                        KeyCode::Char('a') => app.start_add(),
+                        KeyCode::Char('e') => app.start_edit_link(),
                         // NEW COMMANDS
                         KeyCode::Enter => app.cycle_current_status(),
                         KeyCode::Char('d') => app.delete_current_job(),
+                        KeyCode::Char('o') => app.open_current_link(),
                         _ => {}
                     },
                     
@@ -201,8 +257,7 @@ fn run_app<B: ratatui::backend::Backend>(
                         KeyCode::Enter => app.submit_input(),
                         KeyCode::Esc => {
                             // Cancel input
-                            app.input_mode = InputMode::Normal;
-                            app.input_buffer.clear();
+                            app.reset_input();
                         }
                         KeyCode::Backspace => {
                             app.input_buffer.pop();
@@ -261,8 +316,29 @@ fn ui(frame: &mut ratatui::Frame, app: &mut App) {
                 models::Status::Ghosted => Style::default().fg(Color::DarkGray),
             };
 
+            let (company_width, role_width, link_width, status_width) =
+                column_widths(chunks[0].width);
+            let link_display = if job.post_link.is_empty() {
+                "-".to_string()
+            } else {
+                truncate(&job.post_link, link_width)
+            };
+            let status_text = truncate(&format!("{:?}", job.status), status_width);
+            let company_text = truncate(&job.company, company_width);
+            let role_text = truncate(&job.role, role_width);
+
             // Using format! macro to align columns slightly
-            let content = format!(" {:<20} | {:<20} | {:?}", job.company, job.role, job.status);
+            let content = format!(
+                " {:<company_width$} | {:<role_width$} | {:<link_width$} | {:<status_width$}",
+                company_text,
+                role_text,
+                link_display,
+                status_text,
+                company_width = company_width,
+                role_width = role_width,
+                link_width = link_width,
+                status_width = status_width,
+            );
             ListItem::new(content).style(style)
         })
         .collect();
@@ -281,7 +357,7 @@ fn ui(frame: &mut ratatui::Frame, app: &mut App) {
 
     // --- FOOTER & POPUP (Same as before) ---
     let footer_text = match app.input_mode {
-        InputMode::Normal => " 'a': Add | 'd': Delete | Enter: Change Status | 'q': Quit ",
+        InputMode::Normal => " 'a': Add | 'e': Edit Link | 'd': Delete | Enter: Change Status | 'o': Open Link | 'q': Quit ",
         InputMode::Editing => " Typing... Enter: Confirm | Esc: Cancel ",
     };
     let footer = Paragraph::new(footer_text)
@@ -295,6 +371,10 @@ fn ui(frame: &mut ratatui::Frame, app: &mut App) {
         let title = match app.input_field {
             InputField::Company => " Enter Company Name ",
             InputField::Role => " Enter Role Title ",
+            InputField::Link => match app.edit_target {
+                EditTarget::Existing(_) => " Edit Job Link ",
+                EditTarget::New => " Enter Job Link (optional) ",
+            },
         };
 
         let input_block = Paragraph::new(app.input_buffer.as_str())
@@ -324,4 +404,76 @@ fn centered_rect(percent_x: u16, percent_y: u16, r: ratatui::layout::Rect) -> ra
             Constraint::Percentage((100 - percent_x) / 2),
         ])
         .split(popup_layout[1])[1]
+}
+
+fn truncate(value: &str, max_len: usize) -> String {
+    if value.len() <= max_len {
+        return value.to_string();
+    }
+    if max_len <= 3 {
+        return value.chars().take(max_len).collect::<String>();
+    }
+    let mut truncated = value
+        .chars()
+        .take(max_len.saturating_sub(3))
+        .collect::<String>();
+    truncated.push_str("...");
+    truncated
+}
+
+fn column_widths(total_width: u16) -> (usize, usize, usize, usize) {
+    let total_width = total_width as usize;
+    let highlight = 3usize; // ">> "
+    let separators = 9usize; // three " | "
+    let leading = 1usize; // leading space before first column
+    let content_width = total_width
+        .saturating_sub(highlight + separators + leading);
+
+    if content_width == 0 {
+        return (0, 0, 0, 0);
+    }
+
+    let min_company = 10usize;
+    let min_role = 10usize;
+    let min_link = 14usize;
+    let min_status = 10usize;
+    let min_total = min_company + min_role + min_link + min_status;
+
+    if content_width < min_total {
+        let weights = [3usize, 3usize, 4usize, 2usize];
+        let weight_sum: usize = weights.iter().sum();
+        let mut company = (content_width * weights[0]) / weight_sum;
+        let mut role = (content_width * weights[1]) / weight_sum;
+        let mut link = (content_width * weights[2]) / weight_sum;
+        let mut status = content_width.saturating_sub(company + role + link);
+
+        company = company.max(3);
+        role = role.max(3);
+        link = link.max(3);
+        status = status.max(3);
+
+        let total = company + role + link + status;
+        if total > content_width {
+            let overflow = total - content_width;
+            let reduce = overflow.min(link.saturating_sub(3));
+            link = link.saturating_sub(reduce);
+        }
+
+        return (company, role, link, status);
+    }
+
+    let extra = content_width - min_total;
+    let company = min_company + (extra * 3 / 10);
+    let role = min_role + (extra * 3 / 10);
+    let mut link = min_link + (extra * 3 / 10);
+    let mut status = content_width.saturating_sub(company + role + link);
+
+    if status < min_status {
+        let deficit = min_status - status;
+        let take = deficit.min(link.saturating_sub(min_link));
+        link = link.saturating_sub(take);
+        status = content_width.saturating_sub(company + role + link);
+    }
+
+    (company, role, link, status)
 }

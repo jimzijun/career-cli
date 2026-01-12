@@ -1,2 +1,4 @@
 /target
 jobs.json
+
+node_modules/

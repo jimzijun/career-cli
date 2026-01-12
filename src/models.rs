@@ -15,6 +15,8 @@ pub struct Job {
     pub id: usize,
     pub company: String,
     pub role: String,
+    #[serde(default)]
+    pub post_link: String,
     pub status: Status,
     pub notes: String,
     pub date_applied: DateTime<Utc>,
@@ -33,11 +35,12 @@ impl Status {
 }
 
 impl Job {
-    pub fn new(id: usize, company: String, role: String) -> Self {
+    pub fn new(id: usize, company: String, role: String, post_link: String) -> Self {
         Self {
             id,
             company,
             role,
+            post_link,
             status: Status::Applied,
             notes: String::new(),
             date_applied: Utc::now(),
